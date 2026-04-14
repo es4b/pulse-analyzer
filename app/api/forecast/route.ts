@@ -2,94 +2,51 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, getOrCreateUser } from '@/lib/auth/session';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { generateForecast } from '@/lib/ai/forecast';
-import type { RawWalletData, Transaction } from '@/lib/supabase/types';
+import pool from '@/lib/db';
+import type { ForecastResponse } from '@/lib/forecast/types';
 
-export async function POST(req: NextRequest) {
+/**
+ * GET /api/forecast
+ *
+ * Reads the most recently computed forecast for the user's wallet from
+ * `forecast_results`. Does NOT recompute. Does NOT call any external APIs.
+ *
+ * The forecast is generated inside POST /api/wallet/refresh; press Refresh
+ * on the dashboard to produce a new one.
+ */
+export async function GET(_req: NextRequest) {
   const session = await getSession();
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = await req.json() as { timeframe?: string };
-  const { timeframe = '24h' } = body;
-
-  const supabase = createServerSupabaseClient();
-
   const user = await getOrCreateUser(session.user.email);
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('id')
-    .eq('user_id', user.id)
-    .single();
-
-  if (!wallet) return NextResponse.json({ error: 'No wallet found' }, { status: 404 });
-
-  const { data: walletData } = await supabase
-    .from('wallet_data')
-    .select('raw_data')
-    .eq('wallet_id', wallet.id)
-    .order('analyzed_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  const raw = walletData?.raw_data as RawWalletData | null;
-  const transactions: Transaction[] = raw?.transactions ?? [];
-
-  try {
-    const prediction = await generateForecast(transactions, timeframe);
-
-    const { data: forecast } = await supabase
-      .from('forecast_results')
-      .insert({
-        wallet_id: wallet.id,
-        timeframe,
-        probability: prediction.probabilities.hold,
-        prediction,
-        confidence: prediction.confidence,
-      })
-      .select()
-      .single();
-
-    return NextResponse.json({ forecast: forecast || { prediction, timeframe } });
-  } catch {
-    return NextResponse.json({ error: 'Forecast generation failed' }, { status: 500 });
+  const { rows: wallets } = await pool.query(
+    'SELECT * FROM wallets WHERE user_id = $1 LIMIT 1',
+    [user.id]
+  );
+  if (wallets.length === 0) {
+    return NextResponse.json({ error: 'No wallet found' }, { status: 404 });
   }
-}
+  const wallet = wallets[0];
 
-export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { rows } = await pool.query(
+    `SELECT prediction, created_at FROM forecast_results
+     WHERE wallet_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [wallet.id]
+  );
+
+  if (rows.length === 0) {
+    return NextResponse.json(
+      { forecast: null, hasForecast: false, message: 'No forecast available. Press Refresh to generate one.' },
+      { status: 200 }
+    );
   }
 
-  const { searchParams } = new URL(req.url);
-  const timeframe = searchParams.get('timeframe') || '24h';
-
-  const supabase = createServerSupabaseClient();
-
-  const user = await getOrCreateUser(session.user.email);
-  if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('id')
-    .eq('user_id', user.id)
-    .single();
-
-  if (!wallet) return NextResponse.json({ forecast: null });
-
-  const { data: forecast } = await supabase
-    .from('forecast_results')
-    .select('*')
-    .eq('wallet_id', wallet.id)
-    .eq('timeframe', timeframe)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  return NextResponse.json({ forecast: forecast || null });
+  const forecast = rows[0].prediction as ForecastResponse;
+  return NextResponse.json({ forecast, hasForecast: true, computedAt: rows[0].created_at });
 }

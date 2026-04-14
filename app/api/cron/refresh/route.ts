@@ -1,18 +1,18 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import pool from '@/lib/db';
 import { fetchAllWalletData } from '@/lib/pulsechain/api';
 import { computeAllAnalysis } from '@/lib/analysis/compute';
 import { sendDailySummary } from '@/lib/notifications';
-import type { RawWalletData } from '@/lib/supabase/types';
+import type { RawWalletData } from '@/lib/types';
 
 export async function GET() {
-  const supabase = createServerSupabaseClient();
+  const { rows: wallets } = await pool.query(
+    'SELECT w.*, u.id AS user_id FROM wallets w JOIN users u ON u.id = w.user_id'
+  );
 
-  const { data: wallets } = await supabase.from('wallets').select('*, users(*)');
-
-  if (!wallets || wallets.length === 0) {
+  if (wallets.length === 0) {
     return NextResponse.json({ message: 'No wallets to refresh' });
   }
 
@@ -28,29 +28,33 @@ export async function GET() {
         internalTransactions: rawData.internalTransactions,
       };
 
-      await supabase.from('wallet_data').insert({
-        wallet_id: wallet.id,
-        raw_data: raw,
-      });
+      await pool.query(
+        'INSERT INTO wallet_data (wallet_id, raw_data) VALUES ($1, $2)',
+        [wallet.id, JSON.stringify(raw)]
+      );
 
       const analysis = computeAllAnalysis(raw, wallet.address);
-      await supabase.from('analysis_results').insert({
-        wallet_id: wallet.id,
-        ...analysis,
-      });
+      await pool.query(
+        `INSERT INTO analysis_results (wallet_id, metrics, behavioral_patterns, network_analysis, anomalies)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          wallet.id,
+          JSON.stringify(analysis.metrics),
+          JSON.stringify(analysis.behavioral_patterns),
+          JSON.stringify(analysis.network_analysis),
+          JSON.stringify(analysis.anomalies),
+        ]
+      );
 
-      await supabase
-        .from('wallets')
-        .update({ last_updated: new Date().toISOString() })
-        .eq('id', wallet.id);
+      await pool.query(
+        'UPDATE wallets SET last_updated = $1 WHERE id = $2',
+        [new Date().toISOString(), wallet.id]
+      );
 
-      if (wallet.users) {
-        const user = wallet.users as { id: string };
-        await sendDailySummary(user.id);
-      }
+      await sendDailySummary(wallet.user_id);
 
       results.push({ walletId: wallet.id, status: 'ok' });
-    } catch (err) {
+    } catch {
       results.push({ walletId: wallet.id, status: 'error' });
     }
   }

@@ -19,9 +19,6 @@ const authMiddleware = withAuth(
   }
 );
 
-// TEST_MODE is read from lib/auth/session.ts — change it there to toggle everywhere
-const TEST_MODE = true; // TODO: set false before production
-
 export default function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -29,7 +26,7 @@ export default function middleware(req: NextRequest) {
     pathname.startsWith(`/${locale}/dashboard`)
   );
 
-  if (isDashboard && !TEST_MODE) {
+  if (isDashboard) {
     return (authMiddleware as unknown as (req: NextRequest) => NextResponse)(req);
   }
 

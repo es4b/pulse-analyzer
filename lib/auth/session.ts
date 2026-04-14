@@ -1,37 +1,23 @@
 import { getServerSession } from 'next-auth';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-
-export const TEST_MODE = true; // TODO: set false before production
-
-const TEST_USER = {
-  email: 'test@pulseanalyzer.dev',
-  name: 'Test User',
-  id: 'test-user-id',
-};
+import { authOptions } from '@/lib/auth/config';
+import pool from '@/lib/db';
 
 export async function getSession() {
-  if (TEST_MODE) {
-    return { user: TEST_USER };
-  }
-  return getServerSession();
+  return getServerSession(authOptions);
 }
 
 export async function getOrCreateUser(email: string): Promise<{ id: string } | null> {
-  const supabase = createServerSupabaseClient();
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM users WHERE email = $1',
+    [email]
+  );
 
-  const { data: existing } = await supabase
-    .from('users')
-    .select('id')
-    .eq('email', email)
-    .single();
+  if (existing.length > 0) return existing[0];
 
-  if (existing) return existing;
+  const { rows: created } = await pool.query(
+    'INSERT INTO users (email) VALUES ($1) RETURNING id',
+    [email]
+  );
 
-  const { data: created } = await supabase
-    .from('users')
-    .insert({ email })
-    .select('id')
-    .single();
-
-  return created ?? null;
+  return created[0] ?? null;
 }

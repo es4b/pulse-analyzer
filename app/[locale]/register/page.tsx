@@ -1,30 +1,53 @@
 'use client';
 
 import { signIn } from 'next-auth/react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useState, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { motion } from 'framer-motion';
 import { LanguageToggle } from '@/components/ui/LanguageToggle';
 import Link from 'next/link';
 
-function AuthForm() {
+export default function RegisterPage() {
   const t = useTranslations('auth');
   const locale = useLocale();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const callbackError = searchParams.get('error');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (password.length < 8) {
+      setError(t('passwordTooShort'));
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError(t('passwordMismatch'));
+      return;
+    }
+
     setLoading(true);
+
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setError('Tada paprastinam, gerai');
+      setLoading(false);
+      return;
+    }
 
     const result = await signIn('credentials', {
       email,
@@ -33,8 +56,7 @@ function AuthForm() {
     });
 
     if (result?.error) {
-      setError(t('authError'));
-      setLoading(false);
+      router.push(`/${locale}/auth`);
     } else {
       router.push(`/${locale}/dashboard`);
     }
@@ -60,16 +82,14 @@ function AuthForm() {
               </svg>
             </div>
             <h1 className="text-xl font-semibold text-[#1D1D1F] mb-2">
-              {t('signInTitle')}
+              {t('registerTitle')}
             </h1>
-            <p className="text-sm text-[#86868B]">{t('signInSubtitle')}</p>
+            <p className="text-sm text-[#86868B]">{t('registerSubtitle')}</p>
           </div>
 
-          {(error || callbackError) && (
+          {error && (
             <div className="mb-6 px-4 py-3 border border-[#EF4444]/20 bg-[#EF4444]/5 rounded-xl">
-              <p className="text-sm text-[#EF4444] text-center">
-                {error || (callbackError === 'SessionRequired' ? t('sessionExpired') : t('authError'))}
-              </p>
+              <p className="text-sm text-[#EF4444] text-center">{error}</p>
             </div>
           )}
 
@@ -99,7 +119,22 @@ function AuthForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t('passwordPlaceholder')}
                 required
-                autoComplete="current-password"
+                autoComplete="new-password"
+                className="w-full px-4 py-3 text-sm text-[#1D1D1F] bg-white border border-[#E5E5E5] rounded-xl outline-none transition-colors placeholder:text-[#86868B] focus:border-[#1D1D1F]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[#1D1D1F] tracking-wide uppercase">
+                {t('confirmPasswordLabel')}
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder={t('confirmPasswordPlaceholder')}
+                required
+                autoComplete="new-password"
                 className="w-full px-4 py-3 text-sm text-[#1D1D1F] bg-white border border-[#E5E5E5] rounded-xl outline-none transition-colors placeholder:text-[#86868B] focus:border-[#1D1D1F]"
               />
             </div>
@@ -115,33 +150,25 @@ function AuthForm() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  {t('signingIn')}
+                  {t('creatingAccount')}
                 </>
               ) : (
-                t('signInButton')
+                t('createAccountButton')
               )}
             </button>
           </form>
 
           <p className="mt-8 text-center text-sm text-[#86868B]">
-            {t('noAccount')}{' '}
+            {t('hasAccount')}{' '}
             <Link
-              href={`/${locale}/register`}
+              href={`/${locale}/auth`}
               className="text-[#1D1D1F] font-medium hover:underline underline-offset-4"
             >
-              {t('registerLink')}
+              {t('loginLink')}
             </Link>
           </p>
         </motion.div>
       </div>
     </div>
-  );
-}
-
-export default function AuthPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-white" />}>
-      <AuthForm />
-    </Suspense>
   );
 }

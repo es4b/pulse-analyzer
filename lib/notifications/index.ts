@@ -1,6 +1,6 @@
 import { Resend } from 'resend';
-import type { AnalysisResult, User } from '@/lib/supabase/types';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import type { AnalysisResult, User } from '@/lib/types';
+import pool from '@/lib/db';
 
 function getResend() {
   return new Resend(process.env.RESEND_API_KEY ?? 'placeholder');
@@ -77,30 +77,33 @@ export async function sendViber(userId: string, message: string): Promise<void> 
 }
 
 export async function checkAndNotify(walletId: string): Promise<void> {
-  const supabase = createServerSupabaseClient();
+  const { rows: walletRows } = await pool.query(
+    'SELECT w.*, u.id AS u_id, u.email AS u_email, u.notify_email, u.notify_telegram, u.notify_viber, u.telegram_chat_id, u.viber_user_id FROM wallets w JOIN users u ON u.id = w.user_id WHERE w.id = $1',
+    [walletId]
+  );
+  if (walletRows.length === 0) return;
 
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('*, users(*)')
-    .eq('id', walletId)
-    .single();
+  const row = walletRows[0];
+  const user: User = {
+    id: row.u_id,
+    email: row.u_email,
+    password_hash: null,
+    telegram_chat_id: row.telegram_chat_id,
+    viber_user_id: row.viber_user_id,
+    notify_email: row.notify_email,
+    notify_telegram: row.notify_telegram,
+    notify_viber: row.notify_viber,
+    large_tx_threshold: row.large_tx_threshold,
+    created_at: row.created_at,
+  };
 
-  if (!wallet) return;
+  const { rows: analysisRows } = await pool.query(
+    'SELECT * FROM analysis_results WHERE wallet_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [walletId]
+  );
+  if (analysisRows.length === 0) return;
 
-  const user = wallet.users as User;
-  if (!user) return;
-
-  const { data: analysis } = await supabase
-    .from('analysis_results')
-    .select('*')
-    .eq('wallet_id', walletId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!analysis) return;
-
-  const typedAnalysis = analysis as AnalysisResult;
+  const typedAnalysis = analysisRows[0] as AnalysisResult;
   const notifications: { message: string; type: string }[] = [];
 
   if (typedAnalysis.anomalies) {
@@ -121,12 +124,10 @@ export async function checkAndNotify(walletId: string): Promise<void> {
   });
 
   for (const notif of notifications) {
-    await supabase.from('notifications').insert({
-      user_id: user.id,
-      type: notif.type,
-      message: notif.message,
-      channel: 'system',
-    });
+    await pool.query(
+      'INSERT INTO notifications (user_id, type, message, channel) VALUES ($1, $2, $3, $4)',
+      [user.id, notif.type, notif.message, 'system']
+    );
 
     const text = `*Pulse Analyzer*\n\n${notif.message}`;
 
@@ -143,38 +144,28 @@ export async function checkAndNotify(walletId: string): Promise<void> {
 }
 
 export async function sendDailySummary(userId: string): Promise<void> {
-  const supabase = createServerSupabaseClient();
+  const { rows: userRows } = await pool.query(
+    'SELECT * FROM users WHERE id = $1',
+    [userId]
+  );
+  if (userRows.length === 0) return;
 
-  const { data: user } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .single();
+  const typedUser = userRows[0] as User;
 
-  if (!user) return;
+  const { rows: walletRows } = await pool.query(
+    'SELECT * FROM wallets WHERE user_id = $1 LIMIT 1',
+    [userId]
+  );
+  if (walletRows.length === 0) return;
 
-  const typedUser = user as User;
+  const { rows: analysisRows } = await pool.query(
+    'SELECT * FROM analysis_results WHERE wallet_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [walletRows[0].id]
+  );
+  if (analysisRows.length === 0) return;
 
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-
-  if (!wallet) return;
-
-  const { data: analysis } = await supabase
-    .from('analysis_results')
-    .select('*')
-    .eq('wallet_id', wallet.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!analysis) return;
-
-  const typedAnalysis = analysis as AnalysisResult;
-  const portfolioValue = typedAnalysis.metrics?.portfolioValue || 0;
+  const typedAnalysis = analysisRows[0] as AnalysisResult;
+  const portfolioValue = typedAnalysis.metrics?.portfolio?.portfolioValue || 0;
   const anomalyCount = typedAnalysis.anomalies?.length || 0;
 
   const message = `Daily Summary for your PulseChain wallet:\n\nPortfolio Value: $${portfolioValue.toFixed(2)}\nAnomalies: ${anomalyCount}\n\nVisit Pulse Analyzer to see the full report.`;

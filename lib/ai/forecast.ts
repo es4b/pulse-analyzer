@@ -1,9 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
-import type { ForecastPrediction } from '@/lib/supabase/types';
-import type { Transaction } from '@/lib/supabase/types';
+import OpenAI from 'openai';
+import type { ForecastPrediction } from '@/lib/types';
+import type { Transaction } from '@/lib/types';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export function buildForecastPrompt(transactions: Transaction[], timeframe: string): string {
@@ -117,25 +117,26 @@ export async function generateForecast(
   transactions: Transaction[],
   timeframe: string
 ): Promise<ForecastPrediction> {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.OPENAI_API_KEY) {
     return ruleBasedFallback(transactions, timeframe);
   }
 
   try {
     const prompt = buildForecastPrompt(transactions, timeframe);
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const completion = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
       max_tokens: 1024,
-      system:
-        'You are a blockchain behavior analyst. Analyze PulseChain wallet transaction history and provide probability predictions for what the wallet owner will do next. Focus on: patterns, sequences, timing, amounts. Always return valid JSON.',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: 'You are a blockchain behavior analyst. Analyze PulseChain wallet transaction history and provide probability predictions for what the wallet owner will do next. Focus on: patterns, sequences, timing, amounts. Always return valid JSON.' },
+        { role: 'user', content: prompt },
+      ],
     });
 
-    const content = message.content[0];
-    if (content.type !== 'text') throw new Error('Unexpected response type');
+    const text = completion.choices[0]?.message?.content;
+    if (!text) throw new Error('Empty response from OpenAI');
 
-    return parseForecastResponse(content.text);
+    return parseForecastResponse(text);
   } catch {
     return ruleBasedFallback(transactions, timeframe);
   }

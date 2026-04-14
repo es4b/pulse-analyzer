@@ -7,7 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { signOut } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LanguageToggle } from '@/components/ui/LanguageToggle';
-import type { Wallet } from '@/lib/supabase/types';
+import type { Wallet } from '@/lib/types';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -27,7 +27,16 @@ function timeAgo(dateStr: string): string {
   if (minutes < 1) return 'Just now';
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function statusColorFor(dateStr: string | null | undefined): { dot: string; ring: string } {
+  if (!dateStr) return { dot: '#86868B', ring: '#86868B' };
+  const diffHours = (Date.now() - new Date(dateStr).getTime()) / 3_600_000;
+  if (diffHours < 1) return { dot: '#22C55E', ring: 'rgba(34,197,94,0.2)' };
+  if (diffHours < 24) return { dot: '#F59E0B', ring: 'rgba(245,158,11,0.2)' };
+  return { dot: '#EF4444', ring: 'rgba(239,68,68,0.2)' };
 }
 
 export function DashboardLayout({
@@ -41,6 +50,20 @@ export function DashboardLayout({
   const locale = useLocale();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!wallet?.address) return;
+    try {
+      await navigator.clipboard.writeText(wallet.address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard API not available — silently ignore
+    }
+  };
+
+  const status = statusColorFor(lastUpdated);
 
   const navLinks = [
     {
@@ -96,48 +119,88 @@ export function DashboardLayout({
     },
   ];
 
-  const SidebarContent = () => (
+  const sidebarContent = (
     <div className="flex flex-col h-full">
       <div className="p-6 border-b border-[#E5E5E5]">
-        <span className="text-base font-semibold text-[#1D1D1F] tracking-tight">
-          Pulse Analyzer
-        </span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/images/logo.jpg" alt="Pulse Analyzer" style={{ width: '160px', height: 'auto' }} />
       </div>
 
       {wallet && (
-        <div className="px-4 py-4 border-b border-[#E5E5E5]">
-          <p className="text-xs text-[#86868B] mb-1">{t('dashboard.wallet')}</p>
-          <p className="text-sm font-mono text-[#1D1D1F] truncate">{truncateAddress(wallet.address)}</p>
-          {wallet.label && (
-            <p className="text-xs text-[#86868B] mt-0.5 truncate">{wallet.label}</p>
-          )}
-          {lastUpdated && (
-            <p className="text-xs text-[#86868B] mt-1">{timeAgo(lastUpdated)}</p>
-          )}
-          {onRefresh && (
-            <button
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              className="mt-2 text-xs text-[#1D1D1F] hover:opacity-60 transition-opacity flex items-center gap-1 disabled:opacity-40"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                className={isRefreshing ? 'animate-spin' : ''}
+        <div className="px-3 py-4 border-b border-[#E5E5E5]">
+          <div className="bg-white border border-[#E5E5E5] rounded-xl p-4 shadow-sm">
+            {/* Label + status dot */}
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-[#1D1D1F] truncate">
+                {wallet.label || t('dashboard.wallet')}
+              </p>
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  backgroundColor: status.dot,
+                  boxShadow: `0 0 0 3px ${status.ring}`,
+                }}
+                aria-label={lastUpdated ? timeAgo(lastUpdated) : ''}
+                title={lastUpdated ? timeAgo(lastUpdated) : ''}
+              />
+            </div>
+
+            {/* Address + copy */}
+            <div className="flex items-center gap-1.5 mb-3">
+              <p className="text-xs font-mono text-[#1D1D1F] truncate flex-1">
+                {truncateAddress(wallet.address)}
+              </p>
+              <button
+                onClick={handleCopy}
+                className="shrink-0 p-1 -m-1 rounded text-[#86868B] hover:text-[#1D1D1F] transition-colors"
+                aria-label={t('dashboard.copyAddress')}
               >
-                <path
-                  d="M10 6A4 4 0 112 6"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-                <path d="M10 3v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {isRefreshing ? t('dashboard.refreshing') : t('dashboard.refresh')}
-            </button>
-          )}
+                {copied ? (
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <path d="M3 7.5l2.5 2.5L11 4.5" stroke="#22C55E" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                    <rect x="4" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                    <path d="M2.5 9.5H2a1 1 0 01-1-1V2.5a1 1 0 011-1h6a1 1 0 011 1V2" stroke="currentColor" strokeWidth="1.3" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {/* Last updated */}
+            {lastUpdated && (
+              <p className="text-xs text-[#86868B] mb-3">
+                {t('dashboard.lastUpdated')} {timeAgo(lastUpdated)}
+              </p>
+            )}
+
+            {/* Copied feedback */}
+            {copied && (
+              <p className="text-xs text-[#22C55E] mb-2 -mt-1">✓ {t('dashboard.copiedToClipboard')}</p>
+            )}
+
+            {/* Refresh button */}
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={isRefreshing}
+                className="w-full py-2 bg-[#1D1D1F] text-white text-xs font-medium rounded-lg hover:opacity-85 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  className={isRefreshing ? 'animate-spin' : ''}
+                >
+                  <path d="M10 6A4 4 0 112 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M10 3v3h-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {isRefreshing ? t('dashboard.refreshing') : t('dashboard.refresh')}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -180,7 +243,7 @@ export function DashboardLayout({
   return (
     <div className="flex h-screen bg-white overflow-hidden">
       <aside className="hidden md:flex flex-col w-60 border-r border-[#E5E5E5] bg-white shrink-0">
-        <SidebarContent />
+        {sidebarContent}
       </aside>
 
       <AnimatePresence>
@@ -200,21 +263,13 @@ export function DashboardLayout({
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
               className="fixed left-0 top-0 bottom-0 w-60 border-r border-[#E5E5E5] bg-white z-50 md:hidden flex flex-col"
             >
-              <SidebarContent />
+              {sidebarContent}
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex items-center justify-center gap-2 bg-[#F59E0B] px-4 py-1.5 text-xs font-medium text-black">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M6 1L11 10H1L6 1z" stroke="currentColor" strokeWidth="1.2" />
-            <path d="M6 4.5v2.5M6 8.5h.01" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-          TEST MODE — No auth required. Remove before production.
-        </div>
-
         <div className="md:hidden flex items-center px-4 h-14 border-b border-[#E5E5E5]">
           <button
             onClick={() => setSidebarOpen(true)}

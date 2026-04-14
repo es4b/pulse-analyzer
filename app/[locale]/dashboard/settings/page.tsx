@@ -7,7 +7,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Toggle } from '@/components/ui/Toggle';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
-import type { User, Wallet } from '@/lib/supabase/types';
+import type { User, Wallet } from '@/lib/types';
 
 export default function SettingsPage() {
   const t = useTranslations('settings');

@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, getOrCreateUser } from '@/lib/auth/session';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import pool from '@/lib/db';
 
 export async function GET() {
   const session = await getSession();
@@ -10,17 +10,15 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const supabase = createServerSupabaseClient();
   const user = await getOrCreateUser(session.user.email);
   if (!user) return NextResponse.json({ settings: null });
 
-  const { data: settings } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single();
+  const { rows } = await pool.query(
+    'SELECT * FROM users WHERE id = $1',
+    [user.id]
+  );
 
-  return NextResponse.json({ settings: settings || null });
+  return NextResponse.json({ settings: rows[0] || null });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -38,24 +36,32 @@ export async function PATCH(req: NextRequest) {
     large_tx_threshold?: number;
   };
 
-  const supabase = createServerSupabaseClient();
-
   const user = await getOrCreateUser(session.user.email);
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const { error } = await supabase
-    .from('users')
-    .update({
-      notify_email: body.notify_email,
-      notify_telegram: body.notify_telegram,
-      notify_viber: body.notify_viber,
-      telegram_chat_id: body.telegram_chat_id || null,
-      viber_user_id: body.viber_user_id || null,
-      large_tx_threshold: body.large_tx_threshold,
-    })
-    .eq('id', user.id);
-
-  if (error) return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
+  try {
+    await pool.query(
+      `UPDATE users SET
+        notify_email = $1,
+        notify_telegram = $2,
+        notify_viber = $3,
+        telegram_chat_id = $4,
+        viber_user_id = $5,
+        large_tx_threshold = $6
+       WHERE id = $7`,
+      [
+        body.notify_email,
+        body.notify_telegram,
+        body.notify_viber,
+        body.telegram_chat_id || null,
+        body.viber_user_id || null,
+        body.large_tx_threshold,
+        user.id,
+      ]
+    );
+  } catch {
+    return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

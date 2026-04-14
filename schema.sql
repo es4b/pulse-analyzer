@@ -1,6 +1,7 @@
 CREATE TABLE users (
   id uuid primary key default gen_random_uuid(),
   email text unique not null,
+  password_hash text,
   telegram_chat_id text,
   viber_user_id text,
   notify_email boolean default true,

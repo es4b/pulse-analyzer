@@ -73,22 +73,140 @@ export interface AnalysisResult {
   behavioral_patterns: BehavioralPatterns;
   network_analysis: NetworkAnalysis;
   anomalies: Anomaly[];
+  ai_insights: AiInsightsData | null;
   created_at: string;
 }
 
+export interface AiInsightsData {
+  strengths: string[];
+  weaknesses: string[];
+  risks: string[];
+  strategyType: string;
+  confidence: number;
+  contradictions: string[];
+  summary: {
+    lt: string;
+    en: string;
+  };
+}
+
 export interface AnalysisMetrics {
-  plsBalance: number;
-  plsBalanceUsd: number;
-  portfolioValue: number;
-  pnlUsd: number;
-  pnlPercent: number;
-  concentrationRisk: number;
-  gasFeesPls: number;
-  gasFeesUsd: number;
+  walletAddress: string;
+  transactionCount: number;
   walletAgeDays: number;
   activityScore: number;
-  walletType: 'trader' | 'holder' | 'whale' | 'bot' | 'unknown';
-  tokens: TokenHolding[];
+  walletType: 'trader' | 'holder' | 'whale' | 'bot' | 'scalper' | 'swing' | 'unknown';
+
+  portfolio: {
+    plsBalance: number;
+    plsBalanceUsd: number;
+    portfolioValue: number;
+    tokens: TokenHolding[];
+    gasFeesPls: number;
+    gasFeesUsd: number;
+  };
+
+  performance: {
+    realizedPnlUsd: number;
+    unrealizedPnlUsd: number;
+    totalPnlUsd: number;
+    roiPercent: number;
+    totalInflowUsd: number;
+    totalOutflowUsd: number;
+    netFlowUsd: number;
+    winRate: number;
+    lossRate: number;
+    avgProfitUsd: number;
+    avgLossUsd: number;
+    expectancy: number;
+    maxDrawdownUsd: number;
+    avgDrawdownUsd: number;
+    pnlStdDev: number;
+    longestWinStreak: number;
+    longestLossStreak: number;
+    tradeCount: number;
+    performanceTrend: 'improving' | 'declining' | 'stable';
+    entryQualityScore: number;
+    exitQualityScore: number;
+    missedProfitPct: number;
+  };
+
+  psychology: {
+    avgHoldingHours: number;
+    medianHoldingHours: number;
+    paperVsDiamondIndex: number;
+    fomoScore: number;
+    dipBuyScore: number;
+    revengeScore: number;
+    impatienceScore: number;
+  };
+
+  strategy: {
+    dcaScore: number;
+    tradingStyle: 'scalper' | 'swing' | 'holder' | 'unknown';
+    positionSizing: 'fixed' | 'increasing' | 'decreasing' | 'mixed';
+    entryStyle: 'single' | 'ladder' | 'mixed';
+    exitStyle: 'full' | 'partial' | 'mixed';
+  };
+
+  bot: {
+    preciseAmountsPct: number;
+    timingRegularityScore: number;
+    repeatedPatternScore: number;
+    gasConsistencyScore: number;
+    botProbability: number;
+    botConfidence: number;
+  };
+
+  behavior: {
+    tradesPerDay: number;
+    tradesPerWeek: number;
+    burstCount: number;
+    avgBurstSize: number;
+    hourlyDistribution: number[];
+    weekdayPattern: number[];
+    activityHeatmap: number[][];
+  };
+
+  network: {
+    topCounterparties: Array<{
+      address: string;
+      count: number;
+      volumeUsd: number;
+      isContract: boolean;
+    }>;
+    contractInteractionPct: number;
+    eoaInteractionPct: number;
+    circularFlowScore: number;
+    uniqueCounterpartiesCount: number;
+    moneyFlowInUsd: number;
+    moneyFlowOutUsd: number;
+  };
+
+  token: {
+    tokenDiversityCount: number;
+    tokenEntropyScore: number;
+    deadTokensPct: number;
+    earlyEntryScore: number;
+  };
+
+  risk: {
+    concentrationRisk: number;
+    largeTransactionsCount: number;
+    failedTransactionsPct: number;
+    moneyLaunderingRisk: number;
+    tailRiskScore: number;
+    liquidityRiskScore: number;
+  };
+
+  metaScores: {
+    skillScore: number;
+    riskScore: number;
+    behaviorScore: number;
+    alphaScore: number;
+  };
+
+  profileLabel: string;
 }
 
 export interface TokenHolding {

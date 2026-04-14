@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
-import type { Wallet } from '@/lib/supabase/types';
+import type { Wallet } from '@/lib/types';
 
 export default function ProfilePage() {
   const t = useTranslations('profile');

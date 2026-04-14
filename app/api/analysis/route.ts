@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getSession, getOrCreateUser } from '@/lib/auth/session';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import pool from '@/lib/db';
 
 export async function GET() {
   const session = await getSession();
@@ -10,26 +10,20 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const supabase = createServerSupabaseClient();
-
   const user = await getOrCreateUser(session.user.email);
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('id')
-    .eq('user_id', user.id)
-    .single();
+  const { rows: wallets } = await pool.query(
+    'SELECT id FROM wallets WHERE user_id = $1 LIMIT 1',
+    [user.id]
+  );
 
-  if (!wallet) return NextResponse.json({ analysis: null });
+  if (wallets.length === 0) return NextResponse.json({ analysis: null });
 
-  const { data: analysis } = await supabase
-    .from('analysis_results')
-    .select('*')
-    .eq('wallet_id', wallet.id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+  const { rows: analysis } = await pool.query(
+    'SELECT * FROM analysis_results WHERE wallet_id = $1 ORDER BY created_at DESC LIMIT 1',
+    [wallets[0].id]
+  );
 
-  return NextResponse.json({ analysis: analysis || null });
+  return NextResponse.json({ analysis: analysis[0] || null });
 }
